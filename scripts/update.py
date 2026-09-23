@@ -89,8 +89,8 @@ def normalize(item, today):
     }
 
 
-def collect(start, end):
-    """Fetch all hits; split the date window when cursor pagination stalls."""
+def collect_window(start, end):
+    """Fetch a short date window, splitting if the API truncates its results."""
     query = f"{TERMS} AND FIRST_PDATE:[{start} TO {end}] sort_date:y"
     cursor, seen_cursors, retrieved = "*", set(), 0
     while True:
@@ -99,7 +99,7 @@ def collect(start, end):
         count = int(result.get("hitCount") or 0)
         yield from batch
         retrieved += len(batch)
-        if retrieved >= count:
+        if retrieved >= count and len(batch) < 1000:
             return
         next_cursor = result.get("nextCursorMark")
         if batch and next_cursor and next_cursor != cursor and next_cursor not in seen_cursors:
@@ -112,9 +112,18 @@ def collect(start, end):
         midpoint = left + (right - left) // 2
         print(f"Splitting {start}..{end}: {retrieved}/{count} hits retrieved", flush=True)
         # The initial page was already yielded; downstream DOI/PMID dedup handles overlap.
-        yield from collect(start, midpoint.isoformat())
-        yield from collect((midpoint + timedelta(days=1)).isoformat(), end)
+        yield from collect_window(start, midpoint.isoformat())
+        yield from collect_window((midpoint + timedelta(days=1)).isoformat(), end)
         return
+
+
+def collect(start, end):
+    """Query contiguous two-week windows so API count/cursor caps cannot skip years."""
+    day, last = date.fromisoformat(start), date.fromisoformat(end)
+    while day <= last:
+        window_end = min(day + timedelta(days=13), last)
+        yield from collect_window(day.isoformat(), window_end.isoformat())
+        day = window_end + timedelta(days=1)
 
 
 def main():
@@ -148,8 +157,11 @@ def main():
         item.update({k: v for k, v in override.items() if k in ("titleZh", "abstractZh", "takeaways", "reviewed", "hidden", "tags", "section")})
     output = {"updatedAt": today.isoformat(), "source": "Europe PMC", "articles": sorted(articles.values(), key=lambda a: (a["date"], a["key"]), reverse=True)}
     DATA.parent.mkdir(parents=True, exist_ok=True)
-    DATA.write_text(json.dumps(output, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    DATA.write_text(json.dumps(output, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
     print(f"Processed {count} records; retained {len(output['articles'])} unique articles")
+    dates = [item["date"] for item in output["articles"] if item["date"]]
+    if dates:
+        print(f"Publication dates: {min(dates)} through {max(dates)}")
 
 
 if __name__ == "__main__":
