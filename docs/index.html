@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102b29">
+  <meta name="description" content="类器官与器官芯片研究文献，定期从 Europe PMC 更新。">
+  <title>Organoid Atlas · 类器官文献图谱</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="返回首页"><span class="brand-mark">◈</span><span>ORGANOID<span class="brand-light">/ATLAS</span><small>类器官文献图谱</small></span></a>
+    <nav aria-label="主导航"><a href="#library">文献库</a><a href="#method">收录方法</a><a class="nav-button" href="#library">探索研究 <span aria-hidden="true">↗</span></a></nav>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="pulse"></span> LIVING RESEARCH INDEX <span class="line"></span> WEEKLY × 2</div>
+        <h1 id="hero-title">观察生命的<br><em>微型世界。</em></h1>
+        <p class="hero-lead">追踪类器官与器官芯片的最新研究。汇集原始论文、综述与预印本，让每一次发现都有迹可循。</p>
+        <a class="primary-button" href="#library">进入文献库 <span aria-hidden="true">↗</span></a>
+        <div class="hero-facts"><div><strong id="totalCount">—</strong><span>收录文献</span></div><div><strong id="researchCount">—</strong><span>原始研究</span></div><div><strong>周二 · 周五</strong><span>北京时间 09:00 更新</span></div></div>
+      </div>
+      <div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="cell cell-one"></div><div class="cell cell-two"></div><div class="cell cell-three"></div><div class="cell cell-four"></div><div class="center-cell"><i></i><i></i><i></i><i></i></div><div class="art-label art-label-a">3D CELL CULTURE / 01</div><div class="art-label art-label-b">MICROPHYSIOLOGY / 02</div></div>
+      <div class="hero-index">01 / RESEARCH LANDSCAPE</div>
+    </section>
+
+    <section class="intro-strip"><span>探索方向 <b>↘</b></span><div>ORGANOIDS <span>·</span> ORGAN-ON-A-CHIP <span>·</span> MICROPHYSIOLOGICAL SYSTEMS</div></section>
+
+    <section class="library" id="library" aria-labelledby="library-title">
+      <div class="section-top"><div><div class="eyebrow dark">THE LITERATURE LIBRARY / 02</div><h2 id="library-title">研究文献<span class="accent">.</span></h2><p>从原始研究到领域综述，按发表时间持续整理。</p></div><div class="update-note">最近检索 <strong id="updatedAt">—</strong><small>新收录条目在人工核对前标注「待审核」</small></div></div>
+      <div class="filters" role="group" aria-label="文献分类"><button class="filter active" data-section="research" aria-pressed="true">原始研究 <span id="tabResearch">0</span></button><button class="filter" data-section="review" aria-pressed="false">综述 <span id="tabReview">0</span></button><button class="filter" data-section="preprint" aria-pressed="false">预印本 <span id="tabPreprint">0</span></button></div>
+      <div class="controls"><label class="search-wrap"><span aria-hidden="true">⌕</span><span class="sr-only">检索题目、作者或期刊</span><input id="search" type="search" placeholder="检索题目、作者、期刊或摘要…"></label><label class="select-wrap"><span>领域</span><select id="topic"><option value="all">全部方向</option><option value="类器官">类器官</option><option value="器官芯片">器官芯片</option></select></label><label class="select-wrap"><span>审核</span><select id="status"><option value="all">全部状态</option><option value="reviewed">已审核</option><option value="pending">待审核</option></select></label></div>
+      <div class="list-meta"><span id="resultCount">正在载入文献…</span><span>按首次发表日期排序 ↓</span></div>
+      <div id="articles" class="article-list" aria-live="polite"></div>
+      <button id="more" class="more-button" hidden>显示更多文献 ↓</button>
+    </section>
+
+    <section id="method" class="method"><div><div class="eyebrow">OUR METHOD / 03</div><h2>每篇文献，<br><em>都有出处。</em></h2></div><div class="method-text"><p>文献元数据来自 <a href="https://europepmc.org/" target="_blank" rel="noopener noreferrer">Europe PMC ↗</a>。网站每周二、周五北京时间 09:00 检索近 8 年的类器官与器官芯片文献，并按 DOI / PMID 去重。</p><p>原始研究为主栏目；综述与预印本独立展示。自动收录的条目先标为「待审核」；中文翻译和研究要点只在实际补充后显示。请以论文原文为准。</p></div></section>
+  </main>
+  <footer><span>◈ ORGANOID / ATLAS</span><span>为研究而整理 · 数据来源 Europe PMC</span><a href="#top">返回顶部 ↑</a></footer>
+</body>
+</html>
