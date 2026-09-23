@@ -29,6 +29,8 @@ jobs:
           persist-credentials: true
       - name: Collect literature
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          BACKFILL: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
         run: python3 scripts/update.py
       - name: Commit refreshed data
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
