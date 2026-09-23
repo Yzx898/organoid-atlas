@@ -13,10 +13,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "docs/data/articles.json"
 OVERRIDES = ROOT / "reviews.json"
+CONFIG = json.loads((ROOT / "docs/config.json").read_text(encoding="utf-8"))
 API = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
-TERMS = '(organoid OR organoids OR "organ-on-a-chip" OR "organ-on-chip" OR "organoid-on-chip" OR "organoids-on-chips" OR "microphysiological system")'
-CHIP = re.compile(r"organ(?:oid|s)?[- ]on[- ](?:a[- ])?chip|organ(?:oid|s)?[- ]chip|microphysiological|organ chip", re.I)
-ORGANOID = re.compile(r"organoid", re.I)
+TERMS = "(" + " OR ".join('("MPS" AND (microphysiological OR organoid OR "organ chip" OR "tissue chip"))' if term.upper() == 'MPS' else '"' + term.replace('"', '') + '"' for term in CONFIG["coreTerms"]) + ")"
+CHIP = re.compile(r"organ(?:oid|s)?[- ]on[- ](?:a[- ])?chips?|organ(?:oid|s)?[- ]chips?|tissue[- ]on[- ](?:a[- ])?chips?|microphysiological|organ chips?", re.I)
+ORGANOID = re.compile(r"organoids?|assembloids?|tumoroids?|enteroids?", re.I)
 REVIEW = re.compile(r"review|meta-analysis|systematic review", re.I)
 EXCLUDE = re.compile(r"editorial|letter|comment|correction|retraction|erratum|conference|book chapter|interview|news|biography", re.I)
 
@@ -78,11 +79,20 @@ def normalize(item, today):
     abstract = re.sub(r"<[^>]+>", " ", item.get("abstractText") or "")
     abstract = re.sub(r"\s+", " ", abstract).strip()
     journal = item.get("journalInfo") or {}
+    journal_title = (journal.get("journal") or {}).get("title") or item.get("journalTitle") or ""
+    metric = next((value for name, value in CONFIG.get("journalMetrics", {}).items() if name.casefold() == journal_title.casefold()), {})
+    keywords = (item.get("keywordList") or {}).get("keyword") or []
+    if isinstance(keywords, str):
+        keywords = [keywords]
     return {
         "key": key_of(item), "doi": doi, "pmid": str(item.get("pmid") or ""),
         "source": source, "sourceId": uid, "title": item["title"].strip(),
-        "authors": item.get("authorString") or "", "journal": (journal.get("journal") or {}).get("title") or item.get("journalTitle") or "",
+        "authors": item.get("authorString") or "", "journal": journal_title,
         "date": item.get("firstPublicationDate") or item.get("firstIndexDate") or "",
+        "onlineDate": item.get("firstPublicationDate") or "", "articleType": " ".join((item.get("pubTypeList") or {}).get("pubType") or []),
+        "peerReviewStatus": "preprint" if source == "PPR" else "published", "keywords": keywords,
+        "pmcid": item.get("pmcid") or "", "openAccess": item.get("isOpenAccess") == "Y",
+        "journalMetrics": metric,
         "abstract": abstract, "url": "https://doi.org/" + urllib.parse.quote(doi, safe="/") if doi else f"https://europepmc.org/article/{source}/{uid}",
         "section": section, "tags": tags, "titleZh": "", "abstractZh": "", "takeaways": [],
         "reviewed": False, "foundAt": today,
