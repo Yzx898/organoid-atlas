@@ -2,6 +2,7 @@
 """Incrementally collect organoid literature from Europe PMC."""
 
 import json
+import os
 import re
 import time
 import urllib.parse
@@ -17,7 +18,7 @@ TERMS = '(organoid OR organoids OR "organ-on-a-chip" OR "organ-on-chip" OR "orga
 CHIP = re.compile(r"organ(?:oid|s)?[- ]on[- ](?:a[- ])?chip|organ(?:oid|s)?[- ]chip|microphysiological|organ chip", re.I)
 ORGANOID = re.compile(r"organoid", re.I)
 REVIEW = re.compile(r"review|meta-analysis|systematic review", re.I)
-EXCLUDE = re.compile(r"editorial|letter|comment|correction|retraction|erratum|conference|book chapter", re.I)
+EXCLUDE = re.compile(r"editorial|letter|comment|correction|retraction|erratum|conference|book chapter|interview|news|biography", re.I)
 
 
 def request_json(params):
@@ -52,7 +53,7 @@ def classify(item):
     title = item.get("title") or ""
     abstract = re.sub(r"<[^>]+>", " ", item.get("abstractText") or "")
     types = " ".join((item.get("pubTypeList") or {}).get("pubType") or [])
-    if EXCLUDE.search(types):
+    if EXCLUDE.search(types) or EXCLUDE.search(title):
         return None
     section = "preprint" if item.get("source") == "PPR" else "review" if REVIEW.search(types) or REVIEW.search(title) else "research"
     haystack = title + " " + abstract
@@ -89,16 +90,31 @@ def normalize(item, today):
 
 
 def collect(start, end):
+    """Fetch all hits; split the date window when cursor pagination stalls."""
     query = f"{TERMS} AND FIRST_PDATE:[{start} TO {end}] sort_date:y"
-    cursor = "*"
+    cursor, seen_cursors, retrieved = "*", set(), 0
     while True:
         result = request_json({"query": query, "format": "json", "resultType": "core", "pageSize": 1000, "cursorMark": cursor})
         batch = result.get("resultList", {}).get("result", [])
+        count = int(result.get("hitCount") or 0)
         yield from batch
+        retrieved += len(batch)
+        if retrieved >= count:
+            return
         next_cursor = result.get("nextCursorMark")
-        if not batch or not next_cursor or next_cursor == cursor:
-            break
-        cursor = next_cursor
+        if batch and next_cursor and next_cursor != cursor and next_cursor not in seen_cursors:
+            seen_cursors.add(cursor)
+            cursor = next_cursor
+            continue
+        left, right = date.fromisoformat(start), date.fromisoformat(end)
+        if left >= right:
+            raise RuntimeError(f"Cannot retrieve all {count} hits for {start}; pagination stalled")
+        midpoint = left + (right - left) // 2
+        print(f"Splitting {start}..{end}: {retrieved}/{count} hits retrieved", flush=True)
+        # The initial page was already yielded; downstream DOI/PMID dedup handles overlap.
+        yield from collect(start, midpoint.isoformat())
+        yield from collect((midpoint + timedelta(days=1)).isoformat(), end)
+        return
 
 
 def main():
@@ -107,7 +123,7 @@ def main():
     if DATA.exists():
         saved = json.loads(DATA.read_text(encoding="utf-8"))
         # Recheck a generous overlap for indexing delays and corrected metadata.
-        start = max(start, (today - timedelta(days=60)).isoformat()) if saved.get("articles") else start
+        start = max(start, (today - timedelta(days=60)).isoformat()) if saved.get("articles") and os.getenv("BACKFILL") != "1" else start
     else:
         saved = {"articles": []}
     reviews = json.loads(OVERRIDES.read_text(encoding="utf-8")) if OVERRIDES.exists() else {}
