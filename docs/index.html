@@ -15,6 +15,11 @@
     <nav aria-label="主导航"><a href="#library">文献库</a><a href="#method">收录方法</a><a class="nav-button" href="#library">探索研究 <span aria-hidden="true">↗</span></a></nav>
   </header>
 
+  <div id="loadingNotice" class="loading-notice" role="status" aria-live="polite">
+    <span class="loading-icon" aria-hidden="true"></span>
+    <div class="loading-copy"><strong id="loadingTitle">正在载入文献</strong><span id="loadingText">正在连接文献库…</span><progress id="loadingProgress" max="100" value="0" aria-label="文献载入进度"></progress></div>
+  </div>
+
   <main id="top">
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
