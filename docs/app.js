@@ -1,4 +1,4 @@
-const state = { articles: [], config: {}, view: 'latest', section: 'research', search: '', topic: 'all', status: 'all', period: 'year', detail: 'all', organ: 'all', journal: 'all', oa: false, sort: 'new', limit: 20 };
+const state = { articles: [], config: {}, translations: {}, reviews: {}, manifest: null, fullLoaded: false, fullPromise: null, view: 'latest', section: 'research', search: '', topic: 'all', status: 'all', period: 'year', detail: 'all', organ: 'all', journal: 'all', oa: false, sort: 'new', limit: 20 };
 const $ = selector => document.querySelector(selector);
 const el = (tag, className, value) => { const node = document.createElement(tag); if (className) node.className = className; if (value != null) node.textContent = value; return node; };
 function addText(parent, tag, className, value) { const node = el(tag, className, value); parent.append(node); return node; }
@@ -56,6 +56,7 @@ function updateDetails() {
 }
 function render() {
   if (!state.articles.length) return;
+  if (state.period === 'all' && !state.fullLoaded) { $('#resultCount').textContent = '正在载入全部历史…'; $('#articles').replaceChildren(addText(document.createDocumentFragment(), 'p', 'empty', '正在逐年载入历史文献，请稍候…')); $('#more').hidden = true; return; }
   const q = state.search.trim().toLocaleLowerCase();
   const base = state.articles.filter(a => !a.hidden && inView(a));
   for (const [section, id] of [['research','tabResearch'],['review','tabReview'],['preprint','tabPreprint']]) $(`#${id}`).textContent = base.filter(a => a.section === section).length;
@@ -68,28 +69,92 @@ function render() {
   $('#more').hidden = filtered.length <= state.limit;
 }
 async function optionalJson(path, fallback) { try { const response = await fetch(path, {cache:'no-store'}); return response.ok ? await response.json() : fallback; } catch { return fallback; } }
+function loading(title, detail, progress, error = false) {
+  const notice = $('#loadingNotice'); notice.hidden = false; notice.classList.toggle('error', error);
+  $('#loadingTitle').textContent = title; $('#loadingText').textContent = detail; $('#loadingProgress').value = progress;
+}
+function prepare(raw) {
+  return raw.map(a => {
+    const translated = state.translations[a.key] || {};
+    for (const field of ['titleZh','abstractZh','takeaways']) if (!a[field] || Array.isArray(a[field]) && !a[field].length) a[field] = translated[field] || a[field];
+    const review = state.reviews[a.key] || state.reviews[a.doi && `doi:${a.doi.toLowerCase()}`] || state.reviews[a.pmid && `pmid:${a.pmid}`] || {};
+    for (const field of ['titleZh','abstractZh','takeaways','reviewed','hidden','tags','section']) if (Object.hasOwn(review, field)) a[field] = review[field];
+    classifyTopics(a); return a;
+  }).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+}
+function refreshJournals() {
+  const select = $('#journal'), chosen = select.value;
+  select.replaceChildren(el('option', '', '全部期刊')); select.firstChild.value = 'all';
+  const journals = new Map(); state.articles.forEach(a => { if (a.journal) journals.set(a.journal, (journals.get(a.journal) || 0) + 1); });
+  const popular = [...journals].sort((a,b) => b[1]-a[1]).slice(0,60);
+  if (chosen !== 'all' && journals.has(chosen) && !popular.some(([name]) => name === chosen)) popular.push([chosen, journals.get(chosen)]);
+  for (const [name, count] of popular) { const option = el('option', '', `${name} (${count})`); option.value = name; select.append(option); }
+  select.value = chosen;
+}
+function refreshTotals() {
+  const visible = state.articles.filter(a => !a.hidden && !/editorial|letter|comment|correction|retraction|erratum|conference|book chapter|interview|news|biography/i.test(`${a.title || ''} ${a.articleType || ''}`));
+  $('#totalCount').textContent = state.manifest?.count ?? visible.length;
+  $('#researchCount').textContent = state.manifest?.sections?.research ?? (state.fullLoaded ? visible.filter(a => a.section === 'research').length : '—');
+  $('#translationCount').textContent = Object.values(state.translations).filter(value => value.abstractZh).length || visible.filter(a => a.abstractZh).length;
+}
+async function fetchYear(year) {
+  const response = await fetch(`data/articles/${encodeURIComponent(year)}.json`);
+  if (!response.ok) throw new Error(`Year ${year}: HTTP ${response.status}`);
+  return response.json();
+}
+async function ensureAllHistory() {
+  if (state.fullLoaded) return;
+  if (state.fullPromise) return state.fullPromise;
+  state.fullPromise = (async () => {
+    const years = state.manifest.years;
+    let finished = 0, next = 0, failed = false;
+    const lists = new Array(years.length);
+    loading('正在载入全部历史', `已载入 0 / ${years.length} 个年份`, 0); render();
+    async function worker() {
+      while (!failed && next < years.length) {
+        const i = next++;
+        try { lists[i] = await fetchYear(years[i]); } catch (error) { failed = true; throw error; }
+        finished++;
+        if (!failed) loading('正在载入全部历史', `已载入 ${finished} / ${years.length} 个年份`, Math.round(finished / years.length * 90));
+      }
+    }
+    await Promise.all(Array.from({length: Math.min(3, years.length)}, worker));
+    loading('正在整理历史文献', '正在准备筛选结果…', 95);
+    state.articles = prepare(lists.flat()); state.fullLoaded = true;
+    refreshJournals(); refreshTotals(); render();
+    loading('历史文献已载入', `共 ${state.manifest.count} 篇`, 100);
+    $('#loadingNotice').hidden = true;
+  })();
+  try { await state.fullPromise; } catch (error) {
+    loading('历史文献载入失败', '请检查网络后重新选择“全部历史”。', 0, true);
+    state.period = 'year'; $('#period').value = 'year'; render(); console.error(error);
+  } finally { state.fullPromise = null; }
+}
 async function init() {
   try {
-    const manifest = await optionalJson('data/index.json', null);
-    let data;
+    loading('正在载入文献', '步骤 1 / 3：读取文献索引…', 10);
+    const [manifest, config, translations, reviews] = await Promise.all([optionalJson('data/index.json', null), optionalJson('config.json', {}), optionalJson('data/translations.json', {}), optionalJson('data/reviews.json', {})]);
+    state.manifest = manifest; state.config = config; state.translations = translations; state.reviews = reviews;
+    loading('正在载入文献', '步骤 2 / 3：读取近期文献…', 35);
+    let raw;
     if (manifest?.years) {
-      const lists = await Promise.all(manifest.years.map(async year => { const response = await fetch(`data/articles/${encodeURIComponent(year)}.json`, {cache:'no-store'}); if (!response.ok) throw new Error(`Year ${year}: HTTP ${response.status}`); return response.json(); }));
-      data = {updatedAt: manifest.updatedAt, articles: lists.flat()};
+      const recent = await optionalJson('data/recent.json', null);
+      if (recent) raw = recent;
+      else { const current = new Date().getUTCFullYear(); const years = manifest.years.filter(year => Number(year) >= current - 1); raw = (await Promise.all((years.length ? years : manifest.years.slice(0,2)).map(fetchYear))).flat(); }
     } else {
-      const response = await fetch('data/articles.json', {cache:'no-store'}); if (!response.ok) throw new Error(`HTTP ${response.status}`); data = await response.json();
+      const response = await fetch('data/articles.json', {cache:'no-store'}); if (!response.ok) throw new Error(`HTTP ${response.status}`); raw = (await response.json()).articles; state.fullLoaded = true;
     }
-    const [config, translations, reviews] = await Promise.all([optionalJson('config.json', {}), optionalJson('data/translations.json', {}), optionalJson('data/reviews.json', {})]); state.config = config;
-    state.articles = (data.articles || []).map(a => { const translated = translations[a.key] || {}; for (const field of ['titleZh','abstractZh','takeaways']) if (!a[field] || Array.isArray(a[field]) && !a[field].length) a[field] = translated[field] || a[field]; const review = reviews[a.key] || reviews[a.doi && `doi:${a.doi.toLowerCase()}`] || reviews[a.pmid && `pmid:${a.pmid}`] || {}; for (const field of ['titleZh','abstractZh','takeaways','reviewed','hidden','tags','section']) if (Object.hasOwn(review, field)) a[field] = review[field]; classifyTopics(a); return a; }).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
-    $('#updatedAt').textContent = data.updatedAt || '等待首次检索'; const visible = state.articles.filter(a => !a.hidden && !/editorial|letter|comment|correction|retraction|erratum|conference|book chapter|interview|news|biography/i.test(`${a.title || ''} ${a.articleType || ''}`)); $('#totalCount').textContent = visible.length; $('#researchCount').textContent = visible.filter(a => a.section === 'research').length; $('#translationCount').textContent = visible.filter(a => a.abstractZh).length;
+    loading('正在载入文献', '步骤 3 / 3：整理筛选结果…', 85);
+    state.articles = prepare(raw || []);
+    $('#updatedAt').textContent = manifest?.updatedAt || '等待首次检索'; refreshTotals();
     const organ = $('#organ'); for (const name of Object.keys(state.config.organSystems || {})) { const option = el('option', '', name); option.value = name; organ.append(option); }
-    const journals = new Map(); state.articles.forEach(a => { if (a.journal) journals.set(a.journal, (journals.get(a.journal) || 0) + 1); }); for (const [name, count] of [...journals].sort((a,b) => b[1]-a[1]).slice(0,60)) { const option = el('option', '', `${name} (${count})`); option.value = name; $('#journal').append(option); }
-    render();
-  } catch (error) { $('#articles').replaceChildren(addText(document.createDocumentFragment(), 'p', 'empty', '文献数据暂时无法载入，请稍后重试。')); $('#resultCount').textContent = '数据载入失败'; console.error(error); }
+    refreshJournals(); render(); loading('文献已载入', '近期文献可以开始浏览。', 100); $('#loadingNotice').hidden = true;
+  } catch (error) { loading('文献载入失败', '请检查网络后刷新页面重试。', 0, true); $('#articles').replaceChildren(addText(document.createDocumentFragment(), 'p', 'empty', '文献数据暂时无法载入，请稍后重试。')); $('#resultCount').textContent = '数据载入失败'; console.error(error); }
 }
 document.querySelectorAll('.entry').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('.entry').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); }); state.view = button.dataset.view; state.detail = 'all'; state.limit = 20; updateDetails(); $('#scopeNote').textContent = state.view === 'highImpact' ? '依据配置中的重点期刊名单；不等同于 JIF 或 JCR Q1。' : state.view === 'latest' ? '默认展示最近一年；历史文献可切换查看。' : '按标题、关键词和摘要自动识别专题，分类结果待人工核对。'; render(); }));
 document.querySelectorAll('.filter').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('.filter').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); }); state.section = button.dataset.section; state.limit = 20; render(); }));
 $('#search').addEventListener('input', e => { state.search = e.target.value; state.limit = 20; render(); });
-for (const id of ['topic','status','period','detail','organ','journal','sort']) $(`#${id}`).addEventListener('change', e => { state[id] = e.target.value; state.limit = 20; render(); });
+for (const id of ['topic','status','period','detail','organ','journal','sort']) $(`#${id}`).addEventListener('change', e => { state[id] = e.target.value; state.limit = 20; if (id === 'period' && state.period === 'all' && !state.fullLoaded) ensureAllHistory(); else render(); });
 $('#oa').addEventListener('change', e => { state.oa = e.target.checked; state.limit = 20; render(); });
 $('#reset').addEventListener('click', () => { for (const id of ['topic','status','detail','organ','journal']) { state[id] = 'all'; $(`#${id}`).value = 'all'; } state.period = 'year'; $('#period').value = 'year'; state.sort = 'new'; $('#sort').value = 'new'; state.oa = false; $('#oa').checked = false; state.search = ''; $('#search').value = ''; state.limit = 20; render(); });
 $('#more').addEventListener('click', () => { state.limit += 20; render(); });
