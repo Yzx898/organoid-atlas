@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ARTICLES = ROOT / "docs/data/articles.json"
+INDEX = ROOT / "docs/data/index.json"
 TRANSLATIONS = ROOT / "docs/data/translations.json"
 MODEL = "Helsinki-NLP/opus-mt-en-zh"
 
@@ -69,7 +70,11 @@ def translate_batch(texts, tokenizer, model, torch):
 
 
 def run():
-    dataset = json.loads(ARTICLES.read_text(encoding="utf-8"))["articles"]
+    if INDEX.exists():
+        manifest = json.loads(INDEX.read_text(encoding="utf-8"))
+        dataset = [article for year in manifest["years"] for article in json.loads((ROOT / "docs/data/articles" / f"{year}.json").read_text(encoding="utf-8"))]
+    else:
+        dataset = json.loads(ARTICLES.read_text(encoding="utf-8"))["articles"]
     done = json.loads(TRANSLATIONS.read_text(encoding="utf-8")) if TRANSLATIONS.exists() else {}
     candidates = [a for a in dataset if a.get("key") and a.get("title") and a["key"] not in done and not a.get("titleZh") and not a.get("hidden")]
     if not candidates:
