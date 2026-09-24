@@ -27,7 +27,7 @@
 
 `reviewed` 设为 `true` 时标为「已审核」。误收录文献可以加 `"hidden": true`。保存 `reviews.json` 后，推送 `main` 会自动重新部署页面并立即应用审核决定，无需等待下一次抓取。直接编辑年度数据的人工修改可能被下一次自动检索覆盖；长期修订请放在 `reviews.json`。
 
-中文翻译草稿由独立的 `Translate literature drafts` 工作流每天北京时间 10:17 在标准 GitHub Actions 运行器上生成。该工作流下载 Apache 2.0 授权的 [Helsinki-NLP/opus-mt-en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh) 开源模型，不使用付费翻译 API 或密钥。一次最多处理 80 篇或运行 45 分钟，后续每天继续补齐历史记录；新收录记录优先。译文存入 `docs/data/translations.json`，不改动英文元数据，页面仍标为「待审核」。没有摘要的论文只翻译标题，不生成研究要点。
+中文翻译草稿由独立的 `Translate literature drafts` 工作流每天北京时间 10:17 在标准 GitHub Actions 运行器上生成。该工作流下载 Apache 2.0 授权的 [Helsinki-NLP/opus-mt-en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh) 开源模型，不使用付费翻译 API 或密钥。一次最多处理 80 篇或运行 45 分钟，后续每天继续补齐历史记录；每批在原始研究、综述、预印本和各专题之间轮流选取，组内优先处理较新的有摘要条目。译文存入 `docs/data/translations.json`，不改动英文元数据，页面仍标为「待审核」。没有摘要的论文只翻译标题，不生成研究要点。
 
 「研究要点」是从原始英文摘要中选出的最多 3 句的译文，不是额外推断的新结论。医学术语和结论需要人工核对。`reviews.json` 中的人工修订优先于机器译文。
 
