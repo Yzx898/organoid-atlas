@@ -98,9 +98,16 @@ function refreshTotals() {
   $('#translationCount').textContent = Object.values(state.translations).filter(value => value.abstractZh).length || visible.filter(a => a.abstractZh).length;
 }
 async function fetchYear(year) {
-  const response = await fetch(`data/articles/${encodeURIComponent(year)}.json`);
-  if (!response.ok) throw new Error(`Year ${year}: HTTP ${response.status}`);
-  return response.json();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(`data/articles/${encodeURIComponent(year)}.json`);
+      if (!response.ok) throw new Error(`Year ${year}: HTTP ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      if (attempt === 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+  }
 }
 async function ensureAllHistory() {
   if (state.fullLoaded) return;
