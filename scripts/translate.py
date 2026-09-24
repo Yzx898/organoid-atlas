@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+from collections import deque
 from datetime import date
 from pathlib import Path
 
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ARTICLES = ROOT / "docs/data/articles.json"
 INDEX = ROOT / "docs/data/index.json"
 TRANSLATIONS = ROOT / "docs/data/translations.json"
+CONFIG = json.loads((ROOT / "docs/config.json").read_text(encoding="utf-8"))
 MODEL = "Helsinki-NLP/opus-mt-en-zh"
 
 
@@ -69,6 +71,30 @@ def translate_batch(texts, tokenizer, model, torch):
     return [value.strip() for value in results]
 
 
+def balanced_candidates(candidates):
+    """Spread each batch across publication types and website topics."""
+    topics = ("pathogen", "drug", "ai", "highImpact", "general")
+    sections = ("research", "review", "preprint")
+    buckets = {(section, topic): deque() for section in sections for topic in topics}
+    candidates.sort(key=lambda a: (bool(a.get("abstract")), a.get("foundAt", ""), a.get("date", "")), reverse=True)
+    whitelist = {name.casefold() for name in CONFIG.get("journalWhitelist", [])}
+    for article in candidates:
+        section = article.get("section") if article.get("section") in sections else "research"
+        text = " ".join((article.get("title") or "", article.get("abstract") or "", " ".join(article.get("keywords") or []))).casefold()
+        matching = [topic for topic in topics[:3] if any(word.casefold() in text for word in CONFIG.get("topics", {}).get(topic, {}).get("keywords", []))]
+        if (article.get("journal") or "").casefold() in whitelist:
+            matching.append("highImpact")
+        if not matching:
+            matching = ["general"]
+        topic = min(matching, key=lambda name: len(buckets[(section, name)]))
+        buckets[(section, topic)].append(article)
+    while any(buckets.values()):
+        for section in sections:
+            for topic in topics:
+                if buckets[(section, topic)]:
+                    yield buckets[(section, topic)].popleft()
+
+
 def run():
     if INDEX.exists():
         manifest = json.loads(INDEX.read_text(encoding="utf-8"))
@@ -80,8 +106,8 @@ def run():
     if not candidates:
         print("No untranslated articles")
         return
-    # New entries are first; the remaining historical entries are processed over subsequent runs.
-    candidates.sort(key=lambda a: (a.get("foundAt", ""), a.get("date", "")), reverse=True)
+    # Each daily run covers all sections and topics; newer articles lead within each group.
+    candidates = list(balanced_candidates(candidates))
     max_items = int(os.getenv("MAX_TRANSLATIONS", "80"))
     max_seconds = int(os.getenv("MAX_SECONDS", "2700"))
     tokenizer, model, torch = load_model()
