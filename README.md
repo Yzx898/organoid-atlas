@@ -7,7 +7,7 @@
 1. 新建公开 GitHub 仓库，将本目录文件上传到仓库根目录，默认分支设为 `main`。
 2. 在 **Settings → Pages → Build and deployment** 中把 Source 设为 **GitHub Actions**。
 3. 在 **Actions → Update literature and deploy site → Run workflow** 手动运行时，勾选 `full_backfill` 会执行完整八年回溯；不勾选则只核查最近 60 天。以后每周二和周五自动检索最近 60 天以覆盖数据库收录延迟，无需手动寻找或上传文献。GitHub 计划任务有可能延迟，具体时间以运行记录为准。
-4. 每次手动修改网站文件或 `reviews.json` 并推送 `main`，页面会自动重新部署。文献按首次发表年份分存在 `docs/data/articles/YYYY.json`，索引在 `docs/data/index.json`，避免 GitHub 单文件大小限制。
+4. 每次手动修改网站文件或 `reviews.json` 并推送 `main`，页面会自动重新部署。文献按首次发表年份分存在 `docs/data/articles/YYYY.json`，索引在 `docs/data/index.json`，近期快照在 `docs/data/recent.json`，避免 GitHub 单文件大小限制。首页优先加载近期快照；选择「全部历史」时再加载年度数据，进度条显示已经读取的年份数。
 
 ## 人工审核
 
