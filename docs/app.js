@@ -22,7 +22,7 @@ function renderCard(article, index) {
   const link = addText(title, 'a', '', article.titleZh || article.title || '未提供题目'); link.href = safeUrl(article.url); link.target = '_blank'; link.rel = 'noopener noreferrer';
   if (article.titleZh) addText(main, 'p', 'english-title', article.title);
   const meta = el('div', 'article-meta'); [article.journal || '期刊待核实', article.onlineDate || article.date || '日期待核实', article.authors || '作者待核实'].forEach(item => addText(meta, 'span', '', item)); main.append(meta);
-  if (article._metrics) addText(main, 'p', 'data-source', `期刊指标（${article._metrics.year || '年份待核实'}）：JIF ${article._metrics.jif ?? '—'} · ${article._metrics.quartile || '—'}；来源：${article._metrics.source}`);
+  if (article._metrics) addText(main, 'p', 'data-source', `期刊指标（${article._metrics.year || '年份待核实'}）：JIF ${article._metrics.jif ?? '—'} · ${article._metrics.category || '学科待核实'} · ${article._metrics.quartile || '—'}；来源：${article._metrics.source}`);
   if (article.abstractZh) { const p = addText(main, 'p', 'abstract'); addText(p, 'strong', '', '中文摘要译文 · '); p.append(document.createTextNode(article.abstractZh)); addText(main, 'p', 'translation-note', article.reviewed ? '人工已审核译文。请以英文原文为准。' : '中文内容由开源模型辅助翻译，待人工审核；请以英文原文为准。'); }
   if (article.abstract) { const p = addText(main, 'p', 'abstract'); addText(p, 'strong', '', 'Original abstract · '); p.append(document.createTextNode(article.abstract)); }
   if (article.takeaways?.length) { addText(main, 'p', 'takeaways-title', '研究要点 · 从英文摘要提取'); const ul = el('ul', 'takeaways'); article.takeaways.forEach(point => addText(ul, 'li', '', point)); main.append(ul); }
@@ -30,9 +30,12 @@ function renderCard(article, index) {
   if (state.view === 'pathogen') { const list = el('div', 'category-list'); for (const [group, labels] of Object.entries(article._categories || {})) labels.forEach(label => addText(list, 'span', '', `${group}：${label}`)); main.append(list); }
   const identifiers = [article.doi && `DOI: ${article.doi}`, article.pmid && `PMID: ${article.pmid}`, article.pmcid && `PMCID: ${article.pmcid}`].filter(Boolean).join(' · ');
   if (identifiers) addText(main, 'p', 'data-source', identifiers);
+  const details = [article.date && `首次发表：${article.date}`, article.onlineDate && `电子发表：${article.onlineDate}`, article.articleType && `类型：${article.articleType}`, article.license && `许可：${article.license}`, article.affiliations?.length && `作者单位：${article.affiliations.slice(0, 5).join('；')}`].filter(Boolean);
+  if (details.length) { const more = el('details', 'paper-details'); addText(more, 'summary', '', '出版与机构信息'); details.forEach(detail => addText(more, 'p', '', detail)); main.append(more); }
   card.append(main); const side = el('div', 'article-side'); addText(side, 'span', article.reviewed ? 'state checked' : 'state', article.reviewed ? '✓ 已审核' : '◷ 待审核');
+  addText(side, 'span', 'publication-status', article.section === 'preprint' ? '预印本 · 未同行评审' : '正式发表');
   const source = addText(side, 'a', '', '查看原文 ↗'); source.href = safeUrl(article.url); source.target = '_blank'; source.rel = 'noopener noreferrer';
-  if (article.pmcid) { const full = addText(side, 'a', '', '开放全文 ↗'); full.href = safeUrl(`https://europepmc.org/articles/${article.pmcid}`); full.target = '_blank'; full.rel = 'noopener noreferrer'; }
+  if (article.openAccessUrl || (article.openAccess && article.pmcid)) { const full = addText(side, 'a', '', '开放全文 ↗'); full.href = safeUrl(article.openAccessUrl || `https://europepmc.org/articles/${article.pmcid}`); full.target = '_blank'; full.rel = 'noopener noreferrer'; }
   card.append(side); return card;
 }
 function cutoffDate() { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); }
