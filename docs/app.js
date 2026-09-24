@@ -62,6 +62,7 @@ function render() {
   for (const [section, id] of [['research','tabResearch'],['review','tabReview'],['preprint','tabPreprint']]) $(`#${id}`).textContent = base.filter(a => a.section === section).length;
   const filtered = base.filter(a => a.section === state.section && (state.topic === 'all' || (a.tags || []).includes(state.topic)) && (state.status === 'all' || Boolean(a.reviewed) === (state.status === 'reviewed')) && (state.organ === 'all' || a._organs.includes(state.organ)) && (state.journal === 'all' || a.journal === state.journal) && (!state.oa || Boolean(a.openAccess || a.openAccessUrl)) && (state.detail === 'all' || (() => { const [group, label] = state.detail.split(':'); return (a._categories[group] || []).includes(label); })()) && (!q || [a.title, a.titleZh, a.authors, a.journal, a.abstract, a.abstractZh, a.doi, a.pmid].some(v => (v || '').toLocaleLowerCase().includes(q))));
   if (state.sort === 'old') filtered.reverse();
+  if (state.sort === 'translated') filtered.sort((a, b) => Number(Boolean(b.abstractZh)) - Number(Boolean(a.abstractZh)));
   $('#resultCount').textContent = `符合条件：${filtered.length} 篇`;
   const container = $('#articles'); container.replaceChildren();
   if (!filtered.length) addText(container, 'p', 'empty', '没有符合条件的文献，请调整筛选条件。');
