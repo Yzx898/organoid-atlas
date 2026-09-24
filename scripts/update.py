@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "docs/data/articles.json"
 INDEX = ROOT / "docs/data/index.json"
 SHARDS = ROOT / "docs/data/articles"
+RECENT = ROOT / "docs/data/recent.json"
 OVERRIDES = ROOT / "reviews.json"
 CONFIG = json.loads((ROOT / "docs/config.json").read_text(encoding="utf-8"))
 API = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
@@ -72,8 +73,12 @@ def write_shards(output):
     for path in SHARDS.glob("*.json"):
         if path.stem not in groups:
             path.unlink()
-    manifest = {"updatedAt": output["updatedAt"], "source": output["source"], "count": len(output["articles"]), "years": sorted(groups, reverse=True)}
+    sections = {section: sum(article.get("section") == section for article in output["articles"]) for section in ("research", "review", "preprint")}
+    manifest = {"updatedAt": output["updatedAt"], "source": output["source"], "count": len(output["articles"]), "sections": sections, "years": sorted(groups, reverse=True)}
     INDEX.write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+    recent_cutoff = (date.today() - timedelta(days=400)).isoformat()
+    recent = [article for article in output["articles"] if (article.get("date") or "") >= recent_cutoff]
+    RECENT.write_text(json.dumps(recent, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
     if DATA.exists():
         DATA.unlink()
 
