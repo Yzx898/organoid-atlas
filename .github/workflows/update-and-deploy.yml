@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      full_backfill:
+        description: Recheck all eight years (true), or test the normal 60-day update (false)
+        type: boolean
+        default: false
   schedule:
     # Tuesday and Friday 09:00 Beijing time (UTC+8).
     - cron: '0 1 * * 2,5'
@@ -30,7 +35,7 @@ jobs:
       - name: Collect literature
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         env:
-          BACKFILL: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
+          BACKFILL: ${{ github.event_name == 'workflow_dispatch' && inputs.full_backfill == true && '1' || '0' }}
         run: python3 scripts/update.py
       - name: Commit refreshed data
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
