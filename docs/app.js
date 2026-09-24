@@ -1,4 +1,4 @@
-const state = { articles: [], config: {}, view: 'latest', section: 'research', search: '', topic: 'all', status: 'all', period: 'year', detail: 'all', limit: 20 };
+const state = { articles: [], config: {}, view: 'latest', section: 'research', search: '', topic: 'all', status: 'all', period: 'year', detail: 'all', organ: 'all', journal: 'all', oa: false, sort: 'new', limit: 20 };
 const $ = selector => document.querySelector(selector);
 const el = (tag, className, value) => { const node = document.createElement(tag); if (className) node.className = className; if (value != null) node.textContent = value; return node; };
 function addText(parent, tag, className, value) { const node = el(tag, className, value); parent.append(node); return node; }
@@ -7,6 +7,7 @@ function matches(text, words) { return (words || []).some(word => { const needle
 function classifyTopics(article) {
   const text = `${article.title || ''} ${article.abstract || ''} ${(article.keywords || []).join(' ')}`.toLocaleLowerCase();
   article._topics = Object.entries(state.config.topics || {}).filter(([, topic]) => matches(text, topic.keywords)).map(([key]) => key);
+  article._organs = Object.entries(state.config.organSystems || {}).filter(([, words]) => matches(text, words)).map(([key]) => key);
   article._categories = {};
   const categories = state.config.topics?.pathogen?.categories || {};
   for (const [group, options] of Object.entries(categories)) article._categories[group] = Object.entries(options).filter(([, words]) => matches(text, words)).map(([label]) => label);
@@ -35,12 +36,14 @@ function renderCard(article, index) {
   card.append(main); const side = el('div', 'article-side'); addText(side, 'span', article.reviewed ? 'state checked' : 'state', article.reviewed ? '✓ 已审核' : '◷ 待审核');
   addText(side, 'span', 'publication-status', article.section === 'preprint' ? '预印本 · 未同行评审' : '正式发表');
   const source = addText(side, 'a', '', '查看原文 ↗'); source.href = safeUrl(article.url); source.target = '_blank'; source.rel = 'noopener noreferrer';
+  if (article.source && article.sourceId) { const record = addText(side, 'a', '', '来源记录 ↗'); record.href = safeUrl(`https://europepmc.org/article/${encodeURIComponent(article.source)}/${encodeURIComponent(article.sourceId)}`); record.target = '_blank'; record.rel = 'noopener noreferrer'; }
   if (article.openAccessUrl || (article.openAccess && article.pmcid)) { const full = addText(side, 'a', '', '开放全文 ↗'); full.href = safeUrl(article.openAccessUrl || `https://europepmc.org/articles/${article.pmcid}`); full.target = '_blank'; full.rel = 'noopener noreferrer'; }
   card.append(side); return card;
 }
-function cutoffDate() { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); }
+function cutoffDate() { const d = new Date(); if (state.period === 'month') d.setDate(d.getDate() - 30); else d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0, 10); }
 function inView(a) {
-  if (state.period === 'year' && (a.date || '') < cutoffDate()) return false;
+  if (/editorial|letter|comment|correction|retraction|erratum|conference|book chapter|interview|news|biography/i.test(`${a.title || ''} ${a.articleType || ''}`)) return false;
+  if (state.period !== 'all' && (a.date || '') < cutoffDate()) return false;
   if (state.view === 'highImpact') return a._highImpact;
   if (['pathogen', 'drug', 'ai'].includes(state.view)) return a._topics.includes(state.view);
   return true;
@@ -56,7 +59,8 @@ function render() {
   const q = state.search.trim().toLocaleLowerCase();
   const base = state.articles.filter(a => !a.hidden && inView(a));
   for (const [section, id] of [['research','tabResearch'],['review','tabReview'],['preprint','tabPreprint']]) $(`#${id}`).textContent = base.filter(a => a.section === section).length;
-  const filtered = base.filter(a => a.section === state.section && (state.topic === 'all' || (a.tags || []).includes(state.topic)) && (state.status === 'all' || Boolean(a.reviewed) === (state.status === 'reviewed')) && (state.detail === 'all' || (() => { const [group, label] = state.detail.split(':'); return (a._categories[group] || []).includes(label); })()) && (!q || [a.title, a.titleZh, a.authors, a.journal, a.abstract, a.abstractZh, a.doi, a.pmid].some(v => (v || '').toLocaleLowerCase().includes(q))));
+  const filtered = base.filter(a => a.section === state.section && (state.topic === 'all' || (a.tags || []).includes(state.topic)) && (state.status === 'all' || Boolean(a.reviewed) === (state.status === 'reviewed')) && (state.organ === 'all' || a._organs.includes(state.organ)) && (state.journal === 'all' || a.journal === state.journal) && (!state.oa || Boolean(a.openAccess || a.openAccessUrl)) && (state.detail === 'all' || (() => { const [group, label] = state.detail.split(':'); return (a._categories[group] || []).includes(label); })()) && (!q || [a.title, a.titleZh, a.authors, a.journal, a.abstract, a.abstractZh, a.doi, a.pmid].some(v => (v || '').toLocaleLowerCase().includes(q))));
+  if (state.sort === 'old') filtered.reverse();
   $('#resultCount').textContent = `符合条件：${filtered.length} 篇`;
   const container = $('#articles'); container.replaceChildren();
   if (!filtered.length) addText(container, 'p', 'empty', '没有符合条件的文献，请调整筛选条件。');
@@ -66,15 +70,27 @@ function render() {
 async function optionalJson(path, fallback) { try { const response = await fetch(path, {cache:'no-store'}); return response.ok ? await response.json() : fallback; } catch { return fallback; } }
 async function init() {
   try {
-    const response = await fetch('data/articles.json', {cache:'no-store'}); if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json(); const [config, translations] = await Promise.all([optionalJson('config.json', {}), optionalJson('data/translations.json', {})]); state.config = config;
-    state.articles = (data.articles || []).map(a => { const translated = translations[a.key] || {}; for (const field of ['titleZh','abstractZh','takeaways']) if (!a[field] || Array.isArray(a[field]) && !a[field].length) a[field] = translated[field] || a[field]; classifyTopics(a); return a; }).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
-    $('#updatedAt').textContent = data.updatedAt || '等待首次检索'; $('#totalCount').textContent = state.articles.filter(a => !a.hidden).length; $('#researchCount').textContent = state.articles.filter(a => !a.hidden && a.section === 'research').length; render();
+    const manifest = await optionalJson('data/index.json', null);
+    let data;
+    if (manifest?.years) {
+      const lists = await Promise.all(manifest.years.map(async year => { const response = await fetch(`data/articles/${encodeURIComponent(year)}.json`, {cache:'no-store'}); if (!response.ok) throw new Error(`Year ${year}: HTTP ${response.status}`); return response.json(); }));
+      data = {updatedAt: manifest.updatedAt, articles: lists.flat()};
+    } else {
+      const response = await fetch('data/articles.json', {cache:'no-store'}); if (!response.ok) throw new Error(`HTTP ${response.status}`); data = await response.json();
+    }
+    const [config, translations, reviews] = await Promise.all([optionalJson('config.json', {}), optionalJson('data/translations.json', {}), optionalJson('data/reviews.json', {})]); state.config = config;
+    state.articles = (data.articles || []).map(a => { const translated = translations[a.key] || {}; for (const field of ['titleZh','abstractZh','takeaways']) if (!a[field] || Array.isArray(a[field]) && !a[field].length) a[field] = translated[field] || a[field]; const review = reviews[a.key] || reviews[a.doi && `doi:${a.doi.toLowerCase()}`] || reviews[a.pmid && `pmid:${a.pmid}`] || {}; for (const field of ['titleZh','abstractZh','takeaways','reviewed','hidden','tags','section']) if (Object.hasOwn(review, field)) a[field] = review[field]; classifyTopics(a); return a; }).sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+    $('#updatedAt').textContent = data.updatedAt || '等待首次检索'; const visible = state.articles.filter(a => !a.hidden && !/editorial|letter|comment|correction|retraction|erratum|conference|book chapter|interview|news|biography/i.test(`${a.title || ''} ${a.articleType || ''}`)); $('#totalCount').textContent = visible.length; $('#researchCount').textContent = visible.filter(a => a.section === 'research').length; $('#translationCount').textContent = visible.filter(a => a.abstractZh).length;
+    const organ = $('#organ'); for (const name of Object.keys(state.config.organSystems || {})) { const option = el('option', '', name); option.value = name; organ.append(option); }
+    const journals = new Map(); state.articles.forEach(a => { if (a.journal) journals.set(a.journal, (journals.get(a.journal) || 0) + 1); }); for (const [name, count] of [...journals].sort((a,b) => b[1]-a[1]).slice(0,60)) { const option = el('option', '', `${name} (${count})`); option.value = name; $('#journal').append(option); }
+    render();
   } catch (error) { $('#articles').replaceChildren(addText(document.createDocumentFragment(), 'p', 'empty', '文献数据暂时无法载入，请稍后重试。')); $('#resultCount').textContent = '数据载入失败'; console.error(error); }
 }
 document.querySelectorAll('.entry').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('.entry').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); }); state.view = button.dataset.view; state.detail = 'all'; state.limit = 20; updateDetails(); $('#scopeNote').textContent = state.view === 'highImpact' ? '依据配置中的重点期刊名单；不等同于 JIF 或 JCR Q1。' : state.view === 'latest' ? '默认展示最近一年；历史文献可切换查看。' : '按标题、关键词和摘要自动识别专题，分类结果待人工核对。'; render(); }));
 document.querySelectorAll('.filter').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('.filter').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); }); state.section = button.dataset.section; state.limit = 20; render(); }));
 $('#search').addEventListener('input', e => { state.search = e.target.value; state.limit = 20; render(); });
-for (const id of ['topic','status','period','detail']) $(`#${id}`).addEventListener('change', e => { state[id] = e.target.value; state.limit = 20; render(); });
+for (const id of ['topic','status','period','detail','organ','journal','sort']) $(`#${id}`).addEventListener('change', e => { state[id] = e.target.value; state.limit = 20; render(); });
+$('#oa').addEventListener('change', e => { state.oa = e.target.checked; state.limit = 20; render(); });
+$('#reset').addEventListener('click', () => { for (const id of ['topic','status','detail','organ','journal']) { state[id] = 'all'; $(`#${id}`).value = 'all'; } state.period = 'year'; $('#period').value = 'year'; state.sort = 'new'; $('#sort').value = 'new'; state.oa = false; $('#oa').checked = false; state.search = ''; $('#search').value = ''; state.limit = 20; render(); });
 $('#more').addEventListener('click', () => { state.limit += 20; render(); });
 init();
