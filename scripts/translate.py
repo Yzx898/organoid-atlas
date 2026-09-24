@@ -80,7 +80,8 @@ def balanced_candidates(candidates):
     whitelist = {name.casefold() for name in CONFIG.get("journalWhitelist", [])}
     for article in candidates:
         section = article.get("section") if article.get("section") in sections else "research"
-        text = " ".join((article.get("title") or "", article.get("abstract") or "", " ".join(article.get("keywords") or []))).casefold()
+        keywords = " ".join(word for word in (article.get("keywords") or []) if isinstance(word, str))
+        text = " ".join((article.get("title") or "", article.get("abstract") or "", keywords)).casefold()
         matching = [topic for topic in topics[:3] if any(word.casefold() in text for word in CONFIG.get("topics", {}).get(topic, {}).get("keywords", []))]
         if (article.get("journal") or "").casefold() in whitelist:
             matching.append("highImpact")
