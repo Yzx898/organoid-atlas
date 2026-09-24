@@ -12,6 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "docs/data/articles.json"
+INDEX = ROOT / "docs/data/index.json"
+SHARDS = ROOT / "docs/data/articles"
 OVERRIDES = ROOT / "reviews.json"
 CONFIG = json.loads((ROOT / "docs/config.json").read_text(encoding="utf-8"))
 API = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
@@ -48,6 +50,32 @@ def aliases(item):
     if item.get("pmid"):
         values.add("pmid:" + str(item["pmid"]).strip())
     return values
+
+
+def load_saved():
+    if INDEX.exists():
+        manifest = json.loads(INDEX.read_text(encoding="utf-8"))
+        articles = []
+        for year in manifest["years"]:
+            articles.extend(json.loads((SHARDS / f"{year}.json").read_text(encoding="utf-8")))
+        return {**manifest, "articles": articles}
+    return json.loads(DATA.read_text(encoding="utf-8")) if DATA.exists() else {"articles": []}
+
+
+def write_shards(output):
+    SHARDS.mkdir(parents=True, exist_ok=True)
+    groups = {}
+    for article in output["articles"]:
+        groups.setdefault((article.get("date") or "unknown")[:4], []).append(article)
+    for year, articles in groups.items():
+        (SHARDS / f"{year}.json").write_text(json.dumps(articles, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+    for path in SHARDS.glob("*.json"):
+        if path.stem not in groups:
+            path.unlink()
+    manifest = {"updatedAt": output["updatedAt"], "source": output["source"], "count": len(output["articles"]), "years": sorted(groups, reverse=True)}
+    INDEX.write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+    if DATA.exists():
+        DATA.unlink()
 
 
 def classify(item):
@@ -143,21 +171,29 @@ def collect_window(start, end):
 def collect(start, end):
     """Query contiguous two-week windows so API count/cursor caps cannot skip years."""
     day, last = date.fromisoformat(start), date.fromisoformat(end)
+    windows = 0
     while day <= last:
         window_end = min(day + timedelta(days=13), last)
         yield from collect_window(day.isoformat(), window_end.isoformat())
+        windows += 1
+        if windows % 28 == 0:
+            print(f"Searched through {window_end.isoformat()} ({windows} windows)", flush=True)
         day = window_end + timedelta(days=1)
 
 
 def main():
     today = date.today()
     start = (today - timedelta(days=365 * 8 + 2)).isoformat()
-    if DATA.exists():
-        saved = json.loads(DATA.read_text(encoding="utf-8"))
+    saved = load_saved()
+    if os.getenv("REPACK_ONLY") == "1":
+        floor = (today - timedelta(days=365 * 8 + 2)).isoformat()
+        saved["articles"] = [a for a in saved["articles"] if (a.get("date") or "") >= floor and not EXCLUDE.search((a.get("title") or "") + " " + (a.get("articleType") or ""))]
+        write_shards(saved)
+        print(f"Repacked {len(saved['articles'])} articles into year files", flush=True)
+        return
+    if saved.get("articles"):
         # Recheck a generous overlap for indexing delays and corrected metadata.
         start = max(start, (today - timedelta(days=60)).isoformat()) if saved.get("articles") and os.getenv("BACKFILL") != "1" else start
-    else:
-        saved = {"articles": []}
     reviews = json.loads(OVERRIDES.read_text(encoding="utf-8")) if OVERRIDES.exists() else {}
     articles = {a["key"]: a for a in saved.get("articles", [])}
     lookup = {alias: a["key"] for a in articles.values() for alias in aliases(a)}
@@ -178,9 +214,12 @@ def main():
     for item in articles.values():
         override = next((reviews[a] for a in aliases(item) if a in reviews), {})
         item.update({k: v for k, v in override.items() if k in ("titleZh", "abstractZh", "takeaways", "reviewed", "hidden", "tags", "section")})
-    output = {"updatedAt": today.isoformat(), "source": "Europe PMC", "articles": sorted(articles.values(), key=lambda a: (a["date"], a["key"]), reverse=True)}
-    DATA.parent.mkdir(parents=True, exist_ok=True)
-    DATA.write_text(json.dumps(output, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+    # Reapply exclusion to previously stored records too: older collection runs may
+    # have admitted interviews or editorials which the current query no longer admits.
+    floor = (today - timedelta(days=365 * 8 + 2)).isoformat()
+    eligible = [a for a in articles.values() if (a.get("date") or "") >= floor and not EXCLUDE.search((a.get("title") or "") + " " + (a.get("articleType") or ""))]
+    output = {"updatedAt": today.isoformat(), "source": "Europe PMC", "articles": sorted(eligible, key=lambda a: (a["date"], a["key"]), reverse=True)}
+    write_shards(output)
     print(f"Processed {count} records; retained {len(output['articles'])} unique articles")
     dates = [item["date"] for item in output["articles"] if item["date"]]
     if dates:
