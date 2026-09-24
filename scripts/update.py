@@ -84,14 +84,27 @@ def normalize(item, today):
     keywords = (item.get("keywordList") or {}).get("keyword") or []
     if isinstance(keywords, str):
         keywords = [keywords]
+    affiliations = []
+    for author in (item.get("authorList") or {}).get("author") or []:
+        for detail in (author.get("authorAffiliationDetailsList") or {}).get("authorAffiliation") or []:
+            value = (detail.get("affiliation") or "").strip()
+            if value and value not in affiliations:
+                affiliations.append(value)
+    if not affiliations and item.get("affiliation"):
+        affiliations.append(item["affiliation"].strip())
+    full_text = (item.get("fullTextUrlList") or {}).get("fullTextUrl") or []
+    open_url = next((link.get("url", "") for link in full_text if link.get("availabilityCode") == "OA" and link.get("documentStyle") == "html"), "")
+    if not open_url and item.get("pmcid") and item.get("isOpenAccess") == "Y":
+        open_url = "https://europepmc.org/articles/" + item["pmcid"]
     return {
         "key": key_of(item), "doi": doi, "pmid": str(item.get("pmid") or ""),
         "source": source, "sourceId": uid, "title": item["title"].strip(),
         "authors": item.get("authorString") or "", "journal": journal_title,
         "date": item.get("firstPublicationDate") or item.get("firstIndexDate") or "",
-        "onlineDate": item.get("firstPublicationDate") or "", "articleType": " ".join((item.get("pubTypeList") or {}).get("pubType") or []),
+        "onlineDate": item.get("electronicPublicationDate") or "", "articleType": " ".join((item.get("pubTypeList") or {}).get("pubType") or []),
         "peerReviewStatus": "preprint" if source == "PPR" else "published", "keywords": keywords,
         "pmcid": item.get("pmcid") or "", "openAccess": item.get("isOpenAccess") == "Y",
+        "openAccessUrl": open_url, "license": item.get("license") or "", "affiliations": affiliations,
         "journalMetrics": metric,
         "abstract": abstract, "url": "https://doi.org/" + urllib.parse.quote(doi, safe="/") if doi else f"https://europepmc.org/article/{source}/{uid}",
         "section": section, "tags": tags, "titleZh": "", "abstractZh": "", "takeaways": [],
