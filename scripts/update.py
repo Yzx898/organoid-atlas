@@ -27,15 +27,17 @@ EXCLUDE = re.compile(r"editorial|letter|comment|correction|retraction|erratum|co
 
 def request_json(params):
     url = API + "?" + urllib.parse.urlencode(params)
-    for attempt in range(4):
+    for attempt in range(6):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "OrganoidAtlas/1.0 (academic literature index)", "Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=35) as response:
                 return json.load(response)
-        except (OSError, ValueError):
-            if attempt == 3:
+        except (OSError, ValueError) as error:
+            if attempt == 5:
                 raise
-            time.sleep(2 ** attempt)
+            delay = min(2 ** attempt, 16)
+            print(f"Europe PMC request failed ({error}); retrying in {delay}s", flush=True)
+            time.sleep(delay)
 
 
 def key_of(item):
