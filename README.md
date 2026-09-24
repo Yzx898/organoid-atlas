@@ -6,7 +6,7 @@
 
 1. 新建公开 GitHub 仓库，将本目录文件上传到仓库根目录，默认分支设为 `main`。
 2. 在 **Settings → Pages → Build and deployment** 中把 Source 设为 **GitHub Actions**。
-3. 在 **Actions → Update literature and deploy site → Run workflow** 手动运行一次，执行完整八年回溯。以后每周二和周五自动检索最近 60 天以覆盖数据库收录延迟，无需手动寻找或上传文献。再次手动运行会重新核查整个八年范围。GitHub 计划任务有可能延迟，具体时间以运行记录为准。
+3. 在 **Actions → Update literature and deploy site → Run workflow** 手动运行时，勾选 `full_backfill` 会执行完整八年回溯；不勾选则只核查最近 60 天。以后每周二和周五自动检索最近 60 天以覆盖数据库收录延迟，无需手动寻找或上传文献。GitHub 计划任务有可能延迟，具体时间以运行记录为准。
 4. 每次手动修改网站文件或 `reviews.json` 并推送 `main`，页面会自动重新部署。文献按首次发表年份分存在 `docs/data/articles/YYYY.json`，索引在 `docs/data/index.json`，避免 GitHub 单文件大小限制。
 
 ## 人工审核
@@ -33,7 +33,7 @@
 
 ## 管理专题与期刊
 
-直接编辑 `docs/config.json` 即可调整 `coreTerms` 检索词、`organSystems` 器官系统词库、各专题 `keywords` 与 `categories`、`journalWhitelist` 重点期刊名单。前端标签和专题匹配从题目、摘要、关键词文本自动计算。新增核心词后，可以在 GitHub Actions 手动运行一次完整八年回溯；日常增量无需手动操作。
+直接编辑 `docs/config.json` 即可调整 `coreTerms` 检索词、`organSystems` 器官系统词库、各专题 `keywords` 与 `categories`、`journalWhitelist` 重点期刊名单。前端标签和专题匹配从题目、摘要、关键词文本自动计算。新增核心词后，可以在 GitHub Actions 手动运行并勾选 `full_backfill` 重新核查八年；日常增量无需手动操作。
 
 重点期刊仅根据配置名单筛选，**不等同于实际 JIF≥8 或 JCR Q1**。JIF 和 JCR 数据通常需要授权，本站不编造这些指标。若管理员有合法授权的指标，可在 `journalMetrics` 按期刊填写 `jif`、`year`、`quartile` 和 `source`，页面才显示其来源和年份。
 
